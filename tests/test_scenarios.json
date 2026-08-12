@@ -1,0 +1,26 @@
+[
+  {
+    "scenario": "01 - System Design Notes",
+    "description": "Create a new document and build it up with multiple append actions",
+    "steps": [
+      "Create a new file about distributed systems design",
+      "A load balancer distributes incoming HTTP requests across multiple backend servers to prevent any single node from being overwhelmed and to ensure high availability",
+      "Add a definition for the term consensus algorithm",
+      "Create a table with two columns: Strategy and Use Case. First row: Round Robin and equal load distribution. Second row: Least Connections and dynamic workload balancing. Third row: IP Hash and session persistence",
+      "Add a bullet list of functional requirements: support for one million transactions per second, 99.9% availability SLA, automatic failover within 30 seconds, horizontal scalability, end-to-end encryption",
+      "Add a section heading: Replication and Fault Tolerance",
+      "Replication ensures that data is copied across multiple nodes so that if one node fails the system can continue operating without data loss or downtime"
+    ]
+  },
+  {
+    "scenario": "02 - New Topic Switch",
+    "description": "Verify that the agent creates a new file when asked to switch topic",
+    "steps": [
+      "Start a new file about machine learning pipelines",
+      "A machine learning pipeline is a sequence of data processing steps that transforms raw input data into a trained model ready for inference",
+      "Add a definition for the term feature engineering",
+      "Add a section heading: Training vs Inference",
+      "During training the model learns patterns from labeled data by adjusting its internal weights through backpropagation. During inference the trained model applies those learned patterns to new unseen data to produce predictions"
+    ]
+  }
+]
