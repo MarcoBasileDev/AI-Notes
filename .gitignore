@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Tests output
+tests/output/
+tests/output/.session.json
+
+# Runtime artifacts
+rec_temp.wav
+.session.json
