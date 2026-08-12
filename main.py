@@ -210,6 +210,7 @@ class NotesApp:
         self.root = root
         self.root.title("🎙️ Voice Notes Agent")
         self.root.geometry("680x580")
+        self.root.minsize(420, 380)
         self.root.configure(bg="#121212")
 
         self.recording = False
@@ -232,50 +233,60 @@ class NotesApp:
     # -----------------------------------------------------------------------
 
     def _build_gui(self):
-        top_frame = tk.Frame(self.root, bg="#121212")
-        top_frame.pack(fill=tk.X, padx=15, pady=10)
+        # Make the root window's single column expand with the window width
+        self.root.columnconfigure(0, weight=1)
+        # Row 4 (log console) should absorb all vertical growth
+        self.root.rowconfigure(4, weight=1)
 
-        # Currently open file label
+        # ── Row 0: active file label ────────────────────────────────────────
         self.lbl_file = tk.Label(
-            top_frame, text="📄 No file open", fg="#888888", bg="#121212",
+            self.root, text="📄 No file open", fg="#888888", bg="#121212",
             font=("Consolas", 10, "italic"), anchor="w"
         )
-        self.lbl_file.pack(side=tk.LEFT)
+        self.lbl_file.grid(row=0, column=0, sticky="ew", padx=15, pady=(10, 2))
 
-        # Microphone selector
+        # ── Row 1: microphone selector ──────────────────────────────────────
         mic_frame = tk.Frame(self.root, bg="#121212")
-        mic_frame.pack(fill=tk.X, padx=15, pady=2)
+        mic_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=2)
+        # Label is fixed; combobox column expands
+        mic_frame.columnconfigure(1, weight=1)
 
-        tk.Label(mic_frame, text="🎤 Microphone:", fg="#aaaaaa", bg="#121212", font=("Arial", 9)).pack(side=tk.LEFT)
+        tk.Label(
+            mic_frame, text="🎤 Microphone:", fg="#aaaaaa", bg="#121212",
+            font=("Arial", 9)
+        ).grid(row=0, column=0, sticky="w")
+
         self.mic_map = self._get_microphones()
-        self.combo_mic = ttk.Combobox(mic_frame, values=list(self.mic_map.keys()), width=55, state="readonly")
-        self.combo_mic.pack(side=tk.LEFT, padx=8)
+        self.combo_mic = ttk.Combobox(
+            mic_frame, values=list(self.mic_map.keys()), state="readonly"
+        )
+        self.combo_mic.grid(row=0, column=1, sticky="ew", padx=(8, 0))
         if self.mic_map:
             self.combo_mic.current(0)
 
-        # Record / Stop button
+        # ── Row 2: record / stop button ─────────────────────────────────────
         self.btn_rec = tk.Button(
             self.root, text="🔴  START RECORDING",
             font=("Arial", 12, "bold"), bg="#b71c1c", fg="white",
-            command=self._toggle_recording, height=2, width=28,
+            command=self._toggle_recording, height=2,
             relief=tk.FLAT, cursor="hand2"
         )
-        self.btn_rec.pack(pady=12)
+        self.btn_rec.grid(row=2, column=0, sticky="ew", padx=15, pady=12)
 
-        # Status label
+        # ── Row 3: status label ─────────────────────────────────────────────
         self.lbl_status = tk.Label(
             self.root, text="Ready.", fg="#4caf50", bg="#121212",
             font=("Arial", 11, "bold")
         )
-        self.lbl_status.pack()
+        self.lbl_status.grid(row=3, column=0, pady=(0, 4))
 
-        # Scrollable log console
+        # ── Row 4: scrollable log console (fills all remaining space) ───────
         self.txt_log = scrolledtext.ScrolledText(
-            self.root, wrap=tk.WORD, width=76, height=20,
+            self.root, wrap=tk.WORD,
             bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 9),
             insertbackground="white"
         )
-        self.txt_log.pack(pady=10, padx=15)
+        self.txt_log.grid(row=4, column=0, sticky="nsew", padx=15, pady=(0, 15))
 
     # -----------------------------------------------------------------------
     # MICROPHONE HELPERS
