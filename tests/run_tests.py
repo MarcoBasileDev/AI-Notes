@@ -20,33 +20,33 @@ Requirements:
 import sys
 import os
 import json
-import queue
 import threading
 import time
 import argparse
 
 # ---------------------------------------------------------------------------
-# Path setup — make sure we can import from the project root
+# Path setup — make sure the project root is importable
 # ---------------------------------------------------------------------------
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-# Override BASE_DIR and SESSION_FILE before importing main, so all file writes
-# go to tests/output/ instead of the project root.
+# Output directory: all generated .md files land here, not in the project root
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Monkey-patch the module-level constants BEFORE the import so agent_worker
-# uses our output directory.
-import importlib
-import types
+# ---------------------------------------------------------------------------
+# Redirect agent config BEFORE importing anything from the agent package,
+# so agent_worker writes to tests/output/ instead of the project root.
+# ---------------------------------------------------------------------------
+import agent.config as _cfg
 
-# We load main as a module but redirect its BASE_DIR
-import main as agent_module
+_cfg.BASE_DIR     = OUTPUT_DIR
+_cfg.SESSION_FILE = os.path.join(OUTPUT_DIR, ".session.json")
+_cfg.AUDIO_TMP    = os.path.join(OUTPUT_DIR, "rec_temp.wav")
 
-# Redirect file output to tests/output/
-agent_module.BASE_DIR = OUTPUT_DIR
-agent_module.SESSION_FILE = os.path.join(OUTPUT_DIR, ".session.json")
+# Now import the worker (it reads BASE_DIR at call time via agent.config)
+from agent.agent import agent_worker
+import agent.config as agent_config  # single reference for state / queue
 
 
 # ---------------------------------------------------------------------------
@@ -56,18 +56,18 @@ agent_module.SESSION_FILE = os.path.join(OUTPUT_DIR, ".session.json")
 class StubApp:
     """
     Minimal stand-in for NotesApp.
-    Provides the .log() and .set_status() interface that agent_worker expects,
-    printing everything to stdout with timestamps instead.
+    Satisfies the interface expected by agent_worker:
+        app.log(message)
+        app.set_status(text, color)
+        app.root.after(delay, fn)
+        app.lbl_file.config(**kwargs)
     """
 
-    def __init__(self):
-        # Fake root object — agent_worker calls root.after(0, fn) to schedule
-        # GUI updates.  We execute the callback immediately in the main thread.
-        self.root = self
+    def __init__(self) -> None:
+        self.root = self  # agent_worker calls app.root.after(...)
 
-    # Called by agent_worker as: app.root.after(0, lambda: ...)
-    def after(self, _delay: int, fn):
-        fn()
+    def after(self, _delay: int, fn) -> None:
+        fn()  # execute immediately — no event loop needed
 
     def log(self, message: str) -> None:
         ts = time.strftime("%H:%M:%S")
@@ -78,8 +78,6 @@ class StubApp:
         ts = time.strftime("%H:%M:%S")
         print(f"  [{ts}] STATUS → {text}")
 
-    # lbl_file.config is called from agent_worker via root.after
-    # We provide a dummy object that accepts .config()
     lbl_file = type("_Label", (), {"config": staticmethod(lambda **_: None)})()
 
 
@@ -88,7 +86,6 @@ class StubApp:
 # ---------------------------------------------------------------------------
 
 SCENARIOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_scenarios.json")
-STEP_TIMEOUT = 120  # seconds to wait for the LLM to respond to a single step
 
 
 def load_scenarios() -> list[dict]:
@@ -98,8 +95,8 @@ def load_scenarios() -> list[dict]:
 
 def resolve_resume_file(scenario: dict, completed: dict[str, str | None]) -> str | None:
     """
-    If the scenario has a 'resume_from_scenario' field, look up the final file
-    produced by that scenario in the `completed` registry and return its path.
+    If the scenario declares 'resume_from_scenario', look up the final file
+    produced by that scenario in `completed` and return its path.
     Returns None if the field is absent or the referenced scenario hasn't run yet.
     """
     ref = scenario.get("resume_from_scenario")
@@ -118,10 +115,10 @@ def resolve_resume_file(scenario: dict, completed: dict[str, str | None]) -> str
 def run_scenario(scenario: dict, app: StubApp, completed: dict[str, str | None]) -> bool:
     """
     Run a single scenario sequentially.
-    completed: registry of {scenario_name: final_file_path} for already-run scenarios.
+    completed: registry {scenario_name: final_file_path} for already-run scenarios.
     Returns True if all steps completed without error, False otherwise.
     """
-    name = scenario["scenario"]
+    name  = scenario["scenario"]
     steps = scenario["steps"]
 
     print(f"\n{'═' * 60}")
@@ -131,12 +128,12 @@ def run_scenario(scenario: dict, app: StubApp, completed: dict[str, str | None])
     print(f"{'═' * 60}")
 
     # Reset agent state, then optionally resume a previous scenario's file
-    agent_module.agent_state["current_file"] = None
-    agent_module.agent_state["last_section"] = None
+    agent_config.agent_state["current_file"] = None
+    agent_config.agent_state["last_section"] = None
 
     resume_path = resolve_resume_file(scenario, completed)
     if resume_path:
-        agent_module.agent_state["current_file"] = resume_path
+        agent_config.agent_state["current_file"] = resume_path
         print(f"  ⏮  Resuming: {os.path.relpath(resume_path, OUTPUT_DIR)}")
 
     errors: list[str] = []
@@ -145,22 +142,20 @@ def run_scenario(scenario: dict, app: StubApp, completed: dict[str, str | None])
         print(f"\n  ── Step {i}/{len(steps)} ──────────────────────────────")
         print(f"  INPUT: \"{step_text[:80]}{'...' if len(step_text) > 80 else ''}\"")
 
-        # Put the text into the queue
-        agent_module.text_queue.put(step_text)
+        agent_config.text_queue.put(step_text)
 
-        # Wait for the queue to drain (agent_worker calls task_done after each item)
         try:
-            agent_module.text_queue.join()  # blocks until task_done() is called
+            agent_config.text_queue.join()  # wait for agent_worker to call task_done()
         except Exception as e:
             errors.append(f"Step {i}: queue join failed — {e}")
             continue
 
-    # Summary for this scenario
-    active = agent_module.agent_state.get("current_file")
+    # Summary
+    active = agent_config.agent_state.get("current_file")
     if active:
         rel = os.path.relpath(active, OUTPUT_DIR)
         print(f"\n  ✅ Final active file: {rel}")
-        completed[name] = active  # register so future scenarios can resume from here
+        completed[name] = active
     else:
         print(f"\n  ⚠️  No active file at end of scenario.")
         completed[name] = None
@@ -201,21 +196,19 @@ def main() -> None:
             print(f"❌ Scenario not found: {args.scenario}")
             sys.exit(1)
 
-    # Single StubApp shared across all scenarios
     app = StubApp()
 
-    # Start the agent worker on a background thread — same as the real app does
     worker_thread = threading.Thread(
-        target=agent_module.agent_worker, args=(app,), daemon=True
+        target=agent_worker, args=(app,), daemon=True
     )
     worker_thread.start()
 
     print(f"\n🚀 Running {len(scenarios)} scenario(s)  →  output: {OUTPUT_DIR}")
     print(f"   Make sure llama-server is running on port 12345.\n")
 
-    passed = 0
-    failed = 0
-    completed: dict[str, str | None] = {}  # tracks final file per scenario
+    passed   = 0
+    failed   = 0
+    completed: dict[str, str | None] = {}
 
     for scenario in scenarios:
         ok = run_scenario(scenario, app, completed)
@@ -225,10 +218,9 @@ def main() -> None:
             failed += 1
 
     # Shut down the worker cleanly
-    agent_module.text_queue.put(None)
+    agent_config.text_queue.put(None)
     worker_thread.join(timeout=5)
 
-    # Final report
     print(f"\n{'═' * 60}")
     print(f"  RESULTS: {passed} passed, {failed} failed")
     print(f"  Output files in: {OUTPUT_DIR}")
