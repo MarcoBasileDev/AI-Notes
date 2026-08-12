@@ -3,7 +3,7 @@ import json
 import queue
 import threading
 import tkinter as tk
-from tkinter import scrolledtext, ttk
+from tkinter import scrolledtext, ttk, filedialog
 import sounddevice as sd
 import scipy.io.wavfile as wav
 import numpy as np
@@ -21,6 +21,7 @@ SAMPLE_RATE      = 16000     # 16 kHz — optimal for Whisper
 # regardless of the working directory from which Python is launched.
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 AUDIO_TMP = os.path.join(BASE_DIR, "rec_temp.wav")
+SESSION_FILE = os.path.join(BASE_DIR, ".session.json")
 
 # ---------------------------------------------------------------------------
 # AGENT STATE
@@ -33,6 +34,32 @@ agent_state = {
 
 # In-memory queue: Whisper produces → agent worker consumes
 text_queue: queue.Queue[str] = queue.Queue()
+
+
+# ---------------------------------------------------------------------------
+# SESSION PERSISTENCE
+# ---------------------------------------------------------------------------
+
+def save_session(file_path: str | None) -> None:
+    """Persist the last active file path so it can be restored on next launch."""
+    try:
+        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+            json.dump({"last_file": file_path}, f)
+    except OSError:
+        pass  # non-critical — silently ignore write errors
+
+
+def load_last_session() -> str | None:
+    """Return the last active file path, or None if not found / file deleted."""
+    try:
+        with open(SESSION_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        path = data.get("last_file")
+        if path and os.path.isfile(path):
+            return path
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +208,10 @@ def agent_worker(app: "NotesApp"):
                 app.log(f"📝 Appended to: {agent_state['current_file']}")
 
             # Update GUI label (must be called from the main thread)
-            app.root.after(0, lambda fn=agent_state["current_file"]: app.lbl_file.config(text=f"📄 {fn}"))
+            app.root.after(0, lambda fn=agent_state["current_file"]: app.lbl_file.config(
+                text=f"📄 {os.path.basename(fn)}", fg="#ce93d8"
+            ))
+            save_session(agent_state["current_file"])
             app.log(f"\n--- WRITTEN CONTENT ---\n{markdown}\n{'─' * 50}")
             app.set_status("✅ Notes updated.", "#4caf50")
 
@@ -235,8 +265,8 @@ class NotesApp:
     def _build_gui(self):
         # Make the root window's single column expand with the window width
         self.root.columnconfigure(0, weight=1)
-        # Row 4 (log console) should absorb all vertical growth
-        self.root.rowconfigure(4, weight=1)
+        # Row 5 (log console) should absorb all vertical growth
+        self.root.rowconfigure(5, weight=1)
 
         # ── Row 0: active file label ────────────────────────────────────────
         self.lbl_file = tk.Label(
@@ -245,9 +275,40 @@ class NotesApp:
         )
         self.lbl_file.grid(row=0, column=0, sticky="ew", padx=15, pady=(10, 2))
 
-        # ── Row 1: microphone selector ──────────────────────────────────────
+        # ── Row 1: file management toolbar ──────────────────────────────────
+        file_bar = tk.Frame(self.root, bg="#121212")
+        file_bar.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 4))
+        file_bar.columnconfigure(0, weight=1)
+        file_bar.columnconfigure(1, weight=1)
+
+        # "Open existing note" — always available
+        self.btn_open = tk.Button(
+            file_bar, text="📂  Open note",
+            font=("Arial", 9, "bold"), bg="#1e3a5f", fg="#90caf9",
+            relief=tk.FLAT, cursor="hand2", padx=10, pady=4,
+            command=self._open_existing_note,
+        )
+        self.btn_open.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        # "Resume last session" — visible only when a previous session exists
+        last = load_last_session()
+        last_label = f"⏮  Resume: {os.path.basename(last)}" if last else "⏮  No previous session"
+        self.btn_resume = tk.Button(
+            file_bar, text=last_label,
+            font=("Arial", 9, "bold"),
+            bg="#1a3a2a" if last else "#1e1e1e",
+            fg="#a5d6a7" if last else "#555555",
+            relief=tk.FLAT, cursor="hand2" if last else "arrow",
+            padx=10, pady=4,
+            command=self._resume_last_session if last else (lambda: None),
+            state=tk.NORMAL if last else tk.DISABLED,
+        )
+        self.btn_resume.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        self._last_session_path = last  # store for use in _resume_last_session
+
+        # ── Row 2: microphone selector ──────────────────────────────────────
         mic_frame = tk.Frame(self.root, bg="#121212")
-        mic_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=2)
+        mic_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=2)
         # Label is fixed; combobox column expands
         mic_frame.columnconfigure(1, weight=1)
 
@@ -264,29 +325,59 @@ class NotesApp:
         if self.mic_map:
             self.combo_mic.current(0)
 
-        # ── Row 2: record / stop button ─────────────────────────────────────
+        # ── Row 3: record / stop button ─────────────────────────────────────
         self.btn_rec = tk.Button(
             self.root, text="🔴  START RECORDING",
             font=("Arial", 12, "bold"), bg="#b71c1c", fg="white",
             command=self._toggle_recording, height=2,
             relief=tk.FLAT, cursor="hand2"
         )
-        self.btn_rec.grid(row=2, column=0, sticky="ew", padx=15, pady=12)
+        self.btn_rec.grid(row=3, column=0, sticky="ew", padx=15, pady=12)
 
-        # ── Row 3: status label ─────────────────────────────────────────────
+        # ── Row 4: status label ─────────────────────────────────────────────
         self.lbl_status = tk.Label(
             self.root, text="Ready.", fg="#4caf50", bg="#121212",
             font=("Arial", 11, "bold")
         )
-        self.lbl_status.grid(row=3, column=0, pady=(0, 4))
+        self.lbl_status.grid(row=4, column=0, pady=(0, 4))
 
-        # ── Row 4: scrollable log console (fills all remaining space) ───────
+        # ── Row 5: scrollable log console (fills all remaining space) ───────
         self.txt_log = scrolledtext.ScrolledText(
             self.root, wrap=tk.WORD,
             bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 9),
             insertbackground="white"
         )
-        self.txt_log.grid(row=4, column=0, sticky="nsew", padx=15, pady=(0, 15))
+        self.txt_log.grid(row=5, column=0, sticky="nsew", padx=15, pady=(0, 15))
+
+    # -----------------------------------------------------------------------
+    # FILE MANAGEMENT
+    # -----------------------------------------------------------------------
+
+    def _set_active_file(self, path: str) -> None:
+        """Set the active note file, update UI and persist the session."""
+        agent_state["current_file"] = path
+        save_session(path)
+        short = os.path.basename(path)
+        self.lbl_file.config(text=f"📄 {short}", fg="#ce93d8")
+        self.log(f"📂 Active file set: {path}")
+        self.set_status(f"✅ Continuing: {short}", "#4caf50")
+
+    def _open_existing_note(self) -> None:
+        """Open a file-picker dialog to select any .md file."""
+        path = filedialog.askopenfilename(
+            title="Open note",
+            initialdir=BASE_DIR,
+            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")],
+        )
+        if path:
+            self._set_active_file(path)
+
+    def _resume_last_session(self) -> None:
+        """Restore the file that was open at the end of the last session."""
+        if self._last_session_path and os.path.isfile(self._last_session_path):
+            self._set_active_file(self._last_session_path)
+        else:
+            self.set_status("⚠️ Previous session file no longer exists.", "#ff9800")
 
     # -----------------------------------------------------------------------
     # MICROPHONE HELPERS
