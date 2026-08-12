@@ -226,20 +226,20 @@ The agent infers intent from natural speech — you do not need to use exact key
 
 ## Configuration
 
-All tuneable constants are at the top of `main.py`:
+All tuneable constants live in `agent/config.py`:
 
 | Constant           | Default                                      | Description                                                                          |
 | ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `LLAMA_SERVER_URL` | `http://localhost:12345/v1/chat/completions` | llama-server OpenAI-compatible endpoint                                              |
 | `LLAMA_MODEL`      | `"gemma"`                                    | Model name in the request body (ignored by llama-server, required by the API schema) |
 | `SAMPLE_RATE`      | `16000`                                      | Audio capture sample rate (keep at 16 kHz for Whisper)                               |
-| `BASE_DIR`         | Script directory                             | Output directory for all generated `.md` files                                       |
+| `BASE_DIR`         | Project root directory                       | Output directory for all generated `.md` files                                       |
 
 **Swap the model**: replace the `-hf` argument in the llama-server command with any GGUF model.
 
-**Use a lighter Whisper model**: change `"small"` to `"tiny"` or `"base"` in `main.py` for faster transcription on slower CPUs (slight accuracy tradeoff).
+**Use a lighter Whisper model**: change `"small"` to `"tiny"` or `"base"` in `agent/transcriber.py` for faster transcription on slower CPUs (slight accuracy tradeoff).
 
-**Force output language**: edit the `SYSTEM_PROMPT` constant in `main.py` to instruct the agent to always write in a specific language regardless of what language you speak.
+**Force output language**: edit the `SYSTEM_PROMPT` constant in `agent/agent.py` to instruct the agent to always write in a specific language regardless of what language you speak.
 
 ---
 
@@ -247,9 +247,13 @@ All tuneable constants are at the top of `main.py`:
 
 ```
 AI-Notes/
-├── main.py                   # full application (GUI, Whisper, queue, agent)
-├── wishper.py                # standalone Whisper test utility (mic selector + timing)
+├── main.py                   # GUI (NotesApp) + entry point
 ├── README.md                 # this file
+├── agent/
+│   ├── config.py             # constants, shared agent_state and text_queue
+│   ├── session.py            # save_session / load_last_session
+│   ├── agent.py              # SYSTEM_PROMPT + agent_worker thread
+│   └── transcriber.py        # Transcriber class (mic capture + Whisper)
 └── tests/
     ├── run_tests.py          # headless integration test runner
     ├── test_scenarios.json   # test scenarios (editable, no code required)
@@ -270,7 +274,7 @@ The output is intentionally **not auto-validated**: there is no assert checking 
 
 ### How it works
 
-`tests/run_tests.py` imports the agent logic from `main.py` and redirects all file output to `tests/output/`. It replaces the GUI with a minimal stub that prints log lines to the terminal. The agent worker thread runs exactly as in the real app — same system prompt, same LLM call, same queue — so what you test is the real thing.
+`tests/run_tests.py` imports the agent logic from the `agent/` package and redirects all file output to `tests/output/`. It replaces the GUI with a minimal stub that prints log lines to the terminal. The agent worker thread runs exactly as in the real app — same system prompt, same LLM call, same queue — so what you test is the real thing.
 
 Each scenario is a list of steps. Steps are processed one at a time, in order, and the runner waits for the LLM to finish each one before sending the next. Agent state (current open file) is reset between scenarios.
 
@@ -323,8 +327,9 @@ No code changes required. The runner picks up the file automatically on the next
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `01 - System Design Notes` | New file creation, concept description, definition blockquote, table, bullet list, new heading, paragraph append |
 | `02 - New Topic Switch`    | Switching to a new file mid-session, continuity across steps                                                     |
-| `03 - Italian Input`       | Non-English transcription, mixed-language behaviour                                                              |
-| `04 - Resume and Extend`   | Resume the document produced by scenario 01 and append a new section, verifying cross-session continuity         |
+| `03 - Resume and Extend`   | Resume the document produced by scenario 01 and append a new section, verifying cross-session continuity         |
+
+> Note on language testing: Whisper's language support is best verified with real microphone input using `wishper.py`. The test runner bypasses Whisper entirely, so a dedicated language scenario would only test the LLM — not the transcription layer where language handling actually matters.
 
 ---
 
