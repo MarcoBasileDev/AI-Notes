@@ -22,5 +22,26 @@
       "Add a section heading: Training vs Inference",
       "During training the model learns patterns from labeled data by adjusting its internal weights through backpropagation. During inference the trained model applies those learned patterns to new unseen data to produce predictions"
     ]
+  },
+  {
+    "scenario": "03 - Italian Input",
+    "description": "Verify that Italian voice input is handled correctly and output is consistent",
+    "steps": [
+      "Crea un nuovo documento sulle architetture a microservizi",
+      "Un microservizio è un componente software indipendente che espone le proprie funzionalità tramite API e può essere distribuito, scalato e aggiornato autonomamente rispetto agli altri servizi",
+      "Aggiungi una definizione per il termine service mesh",
+      "Crea una tabella con le colonne Vantaggio e Svantaggio. Prima riga: scalabilità indipendente e complessità operativa aumentata. Seconda riga: deploy autonomo e latenza di rete tra servizi. Terza riga: fault isolation e overhead di comunicazione"
+    ]
+  },
+  {
+    "scenario": "04 - Resume and Extend",
+    "description": "Resume the document produced by scenario 01 and append a new section, verifying cross-session continuity",
+    "resume_from_scenario": "01 - System Design Notes",
+    "steps": [
+      "Add a section heading: Caching Strategies",
+      "Caching is the process of storing frequently accessed data in a fast-access layer such as Redis or Memcached so that subsequent requests can be served without hitting the primary database, reducing latency and backend load significantly",
+      "Add a bullet list of common cache invalidation strategies: time-to-live expiration, write-through, write-behind, cache-aside, and event-driven invalidation",
+      "Add a definition for the term cache stampede"
+    ]
   }
 ]

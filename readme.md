@@ -324,6 +324,7 @@ No code changes required. The runner picks up the file automatically on the next
 | `01 - System Design Notes` | New file creation, concept description, definition blockquote, table, bullet list, new heading, paragraph append |
 | `02 - New Topic Switch`    | Switching to a new file mid-session, continuity across steps                                                     |
 | `03 - Italian Input`       | Non-English transcription, mixed-language behaviour                                                              |
+| `04 - Resume and Extend`   | Resume the document produced by scenario 01 and append a new section, verifying cross-session continuity         |
 
 ---
 
