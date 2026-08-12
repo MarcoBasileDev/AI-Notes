@@ -96,9 +96,29 @@ def load_scenarios() -> list[dict]:
         return json.load(f)
 
 
-def run_scenario(scenario: dict, app: StubApp) -> bool:
+def resolve_resume_file(scenario: dict, completed: dict[str, str | None]) -> str | None:
+    """
+    If the scenario has a 'resume_from_scenario' field, look up the final file
+    produced by that scenario in the `completed` registry and return its path.
+    Returns None if the field is absent or the referenced scenario hasn't run yet.
+    """
+    ref = scenario.get("resume_from_scenario")
+    if not ref:
+        return None
+    path = completed.get(ref)
+    if not path:
+        print(f"  ⚠️  resume_from_scenario: '{ref}' not found in completed scenarios — skipping resume.")
+        return None
+    if not os.path.isfile(path):
+        print(f"  ⚠️  resume_from_scenario: file '{path}' no longer exists — skipping resume.")
+        return None
+    return path
+
+
+def run_scenario(scenario: dict, app: StubApp, completed: dict[str, str | None]) -> bool:
     """
     Run a single scenario sequentially.
+    completed: registry of {scenario_name: final_file_path} for already-run scenarios.
     Returns True if all steps completed without error, False otherwise.
     """
     name = scenario["scenario"]
@@ -110,9 +130,14 @@ def run_scenario(scenario: dict, app: StubApp) -> bool:
     print(f"  Steps: {len(steps)}")
     print(f"{'═' * 60}")
 
-    # Reset agent state between scenarios so each starts fresh
+    # Reset agent state, then optionally resume a previous scenario's file
     agent_module.agent_state["current_file"] = None
     agent_module.agent_state["last_section"] = None
+
+    resume_path = resolve_resume_file(scenario, completed)
+    if resume_path:
+        agent_module.agent_state["current_file"] = resume_path
+        print(f"  ⏮  Resuming: {os.path.relpath(resume_path, OUTPUT_DIR)}")
 
     errors: list[str] = []
 
@@ -135,8 +160,10 @@ def run_scenario(scenario: dict, app: StubApp) -> bool:
     if active:
         rel = os.path.relpath(active, OUTPUT_DIR)
         print(f"\n  ✅ Final active file: {rel}")
+        completed[name] = active  # register so future scenarios can resume from here
     else:
         print(f"\n  ⚠️  No active file at end of scenario.")
+        completed[name] = None
         errors.append("No active file at end of scenario")
 
     if errors:
@@ -188,9 +215,10 @@ def main() -> None:
 
     passed = 0
     failed = 0
+    completed: dict[str, str | None] = {}  # tracks final file per scenario
 
     for scenario in scenarios:
-        ok = run_scenario(scenario, app)
+        ok = run_scenario(scenario, app, completed)
         if ok:
             passed += 1
         else:
