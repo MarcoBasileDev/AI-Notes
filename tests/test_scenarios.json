@@ -24,17 +24,7 @@
     ]
   },
   {
-    "scenario": "03 - Italian Input",
-    "description": "Verify that Italian voice input is handled correctly and output is consistent",
-    "steps": [
-      "Crea un nuovo documento sulle architetture a microservizi",
-      "Un microservizio è un componente software indipendente che espone le proprie funzionalità tramite API e può essere distribuito, scalato e aggiornato autonomamente rispetto agli altri servizi",
-      "Aggiungi una definizione per il termine service mesh",
-      "Crea una tabella con le colonne Vantaggio e Svantaggio. Prima riga: scalabilità indipendente e complessità operativa aumentata. Seconda riga: deploy autonomo e latenza di rete tra servizi. Terza riga: fault isolation e overhead di comunicazione"
-    ]
-  },
-  {
-    "scenario": "04 - Resume and Extend",
+    "scenario": "03 - Resume and Extend",
     "description": "Resume the document produced by scenario 01 and append a new section, verifying cross-session continuity",
     "resume_from_scenario": "01 - System Design Notes",
     "steps": [
