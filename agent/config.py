@@ -32,6 +32,7 @@ SESSION_FILE = os.path.join(BASE_DIR, ".session.json")
 agent_state: dict = {
     "current_file": None,   # absolute path of the active .md file
     "last_section": None,   # last heading/topic written (for continuity)
+    "file_summary":  None,  # plain-text summary of current file (or None)
 }
 
 # In-memory queue: Whisper produces → agent worker consumes.

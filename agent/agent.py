@@ -84,10 +84,17 @@ def agent_worker(app) -> None:
 
         raw = ""
         try:
-            # Build context: send the last 3000 chars of the current file so the
-            # agent can write in continuity without repeating itself.
+            # Build context for the LLM.
+            # If a summary of the current file is available (generated on open/resume),
+            # use it as context — it gives the model a better semantic overview than
+            # the raw tail of the file.  Once the user starts writing new content the
+            # summary is cleared so subsequent calls fall back to the last 3000 chars,
+            # which is more accurate for fine-grained continuity.
             file_context = ""
-            if agent_state["current_file"] and os.path.exists(agent_state["current_file"]):
+            if agent_state["file_summary"]:
+                file_context = f"[Document summary]\n{agent_state['file_summary']}"
+                agent_state["file_summary"] = None  # use once, then revert to tail
+            elif agent_state["current_file"] and os.path.exists(agent_state["current_file"]):
                 with open(agent_state["current_file"], "r", encoding="utf-8") as f:
                     existing = f.read()
                     file_context = existing[-3000:] if len(existing) > 3000 else existing
