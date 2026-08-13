@@ -215,7 +215,7 @@ class NotesApp:
     def _run_summary(self, path: str) -> None:
         """Background thread: call the LLM, then update the UI."""
         try:
-            summary = summarize_file(path)
+            summary = summarize_file(path, log=self.log)
             agent_state["file_summary"] = summary  # store for agent_worker to use once
             self.root.after(0, lambda: self._show_summary(summary))
             self.set_status("✅ Summary ready.", "#4caf50")
