@@ -1,4 +1,4 @@
-# 🎙️ Voice Notes Agent
+# 🎙️ AI Notes
 
 > **Stop writing notes. Start thinking out loud.**
 
@@ -24,7 +24,7 @@ This tool removes that overhead entirely:
 
 - **Speed** — speaking is 3–5× faster than typing for dense technical content
 - **Zero formatting overhead** — you never write a single Markdown character
-- **Stateful continuity** — the agent reads the tail of the current file before writing, so it never repeats itself and always picks up where you left off
+- **Stateful continuity** — the agent uses the tail of the current file as context, preserving the document's style, heading structure, and tone across recordings
 - **Built-in learning aid** — say _"add a definition of X"_ and the agent inserts an inline blockquote with the explanation, directly in your notes
 - **Fully private and offline** — Whisper runs on CPU, the LLM runs locally via llama-server; no data leaves your machine
 
@@ -74,6 +74,9 @@ At ~17 t/s, a 2048-token response takes around 2 minutes. A standard blocking HT
 
 **Why CPU for Whisper?**  
 The RTX 3070 has 8 GB of VRAM. A quantized 26B model uses most of that. Running Whisper on the GPU would either not fit or force a smaller LLM. The Ryzen 9 3900x handles `faster-whisper small int8` in 2–5 seconds — fast enough that the bottleneck is always the LLM, not the transcription.
+
+**Why send the last 3000 chars as context?**  
+The agent does not use context to avoid repetition — that is the user's responsibility, not the LLM's. The tail of the file serves a different purpose: it tells the LLM what heading level the document uses, what tone and style to match, and whether a section is still open or was closed. Without it, each recording would produce stylistically disconnected blocks. For short files or fresh sessions the context is effectively the whole file anyway.
 
 ---
 
@@ -224,6 +227,25 @@ The agent infers intent from natural speech — you do not need to use exact key
 
 ---
 
+## Document Overview (Summarize)
+
+The **📋 Summarize** button in the toolbar sends the full content of the active file to the LLM and asks for a concise overview — 5 to 10 bullet points covering the main topics, key concepts, and any open threads. The result appears in a collapsible panel just below the toolbar and can be dismissed with the `✕` button.
+
+This is useful in two situations:
+
+- **Before a new session** — open an old note, summarize it to quickly re-orient yourself on where you left off, then start recording
+- **For review** — get a bird's-eye view of a document without opening an external editor
+
+### How the summary interacts with the agent
+
+When a summary is available and you start recording, the agent worker uses it as context for the first transcription instead of the raw tail of the file. This gives it a better semantic picture of the full document, not just the last few paragraphs. After that first recording the summary is discarded and the agent reverts to the standard tail-of-file context for all subsequent steps.
+
+The summarization call runs on a background thread and uses a lower temperature (`0.4`) than the note-writing agent (`0.7`), which keeps the output more factual and consistent.
+
+> The summary is never written to the `.md` file — it is display-only and lives only in memory for the duration of the session.
+
+---
+
 ## Configuration
 
 All tuneable constants live in `agent/config.py`:
@@ -253,7 +275,8 @@ AI-Notes/
 │   ├── config.py             # constants, shared agent_state and text_queue
 │   ├── session.py            # save_session / load_last_session
 │   ├── agent.py              # SYSTEM_PROMPT + agent_worker thread
-│   └── transcriber.py        # Transcriber class (mic capture + Whisper)
+│   ├── transcriber.py        # Transcriber class (mic capture + Whisper)
+│   └── summarizer.py         # on-demand document summarization
 └── tests/
     ├── run_tests.py          # headless integration test runner
     ├── test_scenarios.json   # test scenarios (editable, no code required)
